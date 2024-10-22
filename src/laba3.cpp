@@ -1,21 +1,35 @@
-#include "header.h"
+#include "C:\Users\allba\c++ progs\Calculator\include\header.h"
 int main()
 {
 	string input;
-	cin >> input;
+	getline(cin, input);
+	
 	try {
-		auto vct = razlom(input);
-		vct = postMalone(vct);
-		auto ans = calculate(vct);
-		cout << endl << ans;
+		Calculator calculator;
+		cout<<calculator.Calculate(input)<<std::endl;
+		
+#ifdef ENABLEFUNC
+#ifndef ENABLEDOUBLE
+		cout << "You are using functions, but without ENABLEDOUBLE answer gonna be rounded, please define it then"<<std::endl;
+#endif
+#endif // ENABLEFUNC
+
+		
+		system("pause");
 	}
-	catch (const char* e) {
-		cout << e;
+	catch (const lex_err& e)  {
+		cout << e.what();
 	}
-	catch (int e) {
-		cout << e;
+	catch (const brack_err& e) {
+		cout << e.what();
 	}
-	catch (...) {
-		cout << "error";
+	catch (const pars_err& e)  {
+		cout << e.what();
 	}
+	catch (const math_err& e)
+	{
+		cout << e.what();
+	}
+	
+	
 }
