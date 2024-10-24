@@ -3,33 +3,32 @@ int main()
 {
 	string input;
 	getline(cin, input);
-	
+
 	try {
 		Calculator calculator;
-		cout<<calculator.Calculate(input)<<std::endl;
-		
-#ifdef ENABLEFUNC
-#ifndef ENABLEDOUBLE
-		cout << "You are using functions, but without ENABLEDOUBLE answer gonna be rounded, please define it then"<<std::endl;
-#endif
-#endif // ENABLEFUNC
+		cout << calculator.Calculate(input) << std::endl;
 
-		
-		system("pause");
 	}
-	catch (const lex_err& e)  {
+	catch (const lex_err& e) {
+		cout << std::endl;
+		cout << std::setfill(' ') << std::setw(e.problem_) << '^' << std::endl;
 		cout << e.what();
 	}
 	catch (const brack_err& e) {
+		cout << std::endl;
+		cout << std::setfill(' ') << std::setw(e.problem_ ) << '^' << std::endl;
 		cout << e.what();
 	}
-	catch (const pars_err& e)  {
+	catch (const pars_err& e) {
+		cout << std::endl;
+		cout << std::setfill(' ') << std::setw(e.problem_ ) << '^' << std::endl;
 		cout << e.what();
 	}
 	catch (const math_err& e)
 	{
+		cout << std::endl << "problem is " << e.lhs_ << e.op_ << e.rhs_ << std::endl;
 		cout << e.what();
 	}
-	
-	
+	//catching by ref
+
 }
