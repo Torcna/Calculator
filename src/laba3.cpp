@@ -26,9 +26,8 @@ int main()
 	}
 	catch (const math_err& e)
 	{
-		cout << std::endl << "problem is " << e.lhs_ << e.op_ << e.rhs_ << std::endl;
+		cout << std::endl << "problem is " << e.problem << std::endl;
 		cout << e.what();
 	}
 	//catching by ref
-
 }

@@ -20,7 +20,6 @@ using std::getline;
 using std::cin;
 using std::cout;
 
-
 struct lex_err :public std::exception {
 	int problem_;
 	lex_err(int ind) :problem_(ind) {};
@@ -38,27 +37,27 @@ struct brack_err : std::exception {
 	char const* what() const noexcept override { return "brackets err"; }
 };
 struct math_err :std::exception {
-	long long lhs_;
-	long long rhs_;
-	string op_;
-	math_err(long long f, long long s, string& op) :lhs_(f), rhs_(s), op_(op) {};
+
+	string problem;
+	math_err(string& op):problem(op){};
 	char const* what() const noexcept override { return "math_er"; };
 };
-
-struct double_usage_err : lex_err {
-	double_usage_err(int problem) :lex_err(problem) {};
-	char const* what() const noexcept override { return "using floating is restricted"; };
-};
 struct division_by_zero_err : math_err {
-	division_by_zero_err(long long f, long long s, string op) : math_err(f, s, op) {};
+	division_by_zero_err(string& op) : math_err(op) {};
 
 	char const* what() const noexcept override { return "division by zero is UNDEFINED"; };
 };
-//struct persent_op_for_floating : lex_err { char const* what() const noexcept override { return "using % operation on float is restricted"; }; };
+
+struct persent_op_for_floating : math_err { 
+	persent_op_for_floating(string& op) : math_err(op) {};
+
+	char const* what() const noexcept override { return "using % operation on float is restricted"; };
+};
 
 class Calculator
 {
-
+	int count_skr_ = 0;
+	int count_skl_ = 0;
 
 	enum typeLex { // types of lex
 		blanc,
@@ -70,6 +69,7 @@ class Calculator
 		skr,
 		phonk
 	};
+
 	enum STATUS { // status of parsing
 		start,
 		stop,
@@ -83,24 +83,18 @@ class Calculator
 	};
 	struct Lexeme
 	{
-
 		typeLex type_;
 		string inner_;
-		long long int value_ = 0;
+		long long int value_;
+		double d_value;
 		int prior_;
-		static inline int count_skr_ = 0;
-		static inline int count_skl_ = 0;
+		Lexeme(typeLex t, double& val, int prior_, string inner_) :type_(t), d_value(val), prior_(prior_), inner_(inner_) {};
 		Lexeme(typeLex t, long long val, int prior_, string inner_) :type_(t), value_(val), prior_(prior_), inner_(inner_) {};
-
 	};
 
 	map<string, set<pair<typeLex, STATUS>>> dictionary_;
 	vector<Lexeme> vct_lex_;
 	string str_;
-
-
-
-
 
 	Lexeme next_one(int& mark, STATUS curr_stat, const string& input)
 	{
@@ -110,22 +104,38 @@ class Calculator
 
 		if (isdigit(symbol))
 		{
-			if (curr_stat == number)
-				throw pars_err(mark);
-			int value_ = 0;
+			
 			string ans;
-			while (isdigit(symbol))
+			bool flag_dot = false;
+			while (isdigit(symbol) || symbol == '.')
 			{
+				if (symbol == '.')
+				{
+					flag_dot = true;
+				}
+
 				ans += symbol;
 				mark++;
 				symbol = input[mark];
 			}
-			if (symbol == ',' || symbol == '.')
-				throw double_usage_err(mark);
-			value_ = stoi(ans);
-			auto t = Lexeme(typeLex::num_int, value_, 0, ans);
 			mark--;
-			return t;
+			
+			if (flag_dot)
+			{
+
+				double value = stod(ans);
+				auto t = Lexeme(typeLex::num_double, value, 0, ans);
+				return t;
+			}
+			else
+			{
+				int value = stoi(ans);
+				auto t = Lexeme(typeLex::num_int, value, 0, ans);
+				return t;
+			}
+				
+			
+			
 		}
 		else if (symbol == '*' || symbol == '/' || symbol == '%')
 			return Lexeme(typeLex::bin, 0, 2, string(1, symbol));
@@ -149,7 +159,7 @@ class Calculator
 		{
 			if (curr_stat != error)
 			{
-				if (Lexeme::count_skl_ >= Lexeme::count_skr_)
+				if (count_skl_ >= count_skr_)
 				{
 					Lexeme sled = next_one(mark, curr_stat, str_);
 					typeLex tip_next = sled.type_;
@@ -162,13 +172,13 @@ class Calculator
 							if (tip_next == iter.first)
 							{
 								if (iter.first == skl)
-									Lexeme::count_skl_++;
+									count_skl_++;
 								curr_stat = iter.second;
 								flag = true;
 							}
 
 						}
-						if (mark == str_.size() && Lexeme::count_skl_ == Lexeme::count_skr_)
+						if (mark == str_.size() && count_skl_ == count_skr_)
 							curr_stat = stop;
 						else if (flag == 0)
 							curr_stat = error;
@@ -183,7 +193,7 @@ class Calculator
 							if (tip_next == iter.first)
 							{
 								if (iter.first == skr)
-									Lexeme::count_skr_++;
+									count_skr_++;
 								curr_stat = iter.second;
 								flag = true;
 							}
@@ -201,7 +211,7 @@ class Calculator
 							{
 								if (iter.first == skl)
 								{
-									Lexeme::count_skl_++;
+									count_skl_++;
 								}
 								curr_stat = iter.second;
 								flag = true;
@@ -227,7 +237,7 @@ class Calculator
 			}
 
 		}
-		if (Lexeme::count_skl_ != Lexeme::count_skr_)
+		if (count_skl_ != count_skr_)
 			throw brack_err(mark);
 		if (vct_lex_.back().type_ == bin)
 			throw pars_err(mark);
@@ -274,7 +284,7 @@ class Calculator
 		std::swap(ans, vct_lex_);
 	}
 
-	double calculate_inner()
+	void calculate_inner(string& ans)
 	{
 		stack<Lexeme> main;
 		for (auto&& iter : vct_lex_)
@@ -282,69 +292,229 @@ class Calculator
 
 			if (iter.type_ == num_int || iter.type_ == num_double)
 				main.push(iter);
-			else if (iter.type_ == una)
-			{
-				auto val = main.top().value_;
-				auto val_type = main.top().type_;
-				main.pop();
-				Lexeme t = Lexeme(val_type, -val, 0, to_string(-val));
-				main.push(t);
-			}
 			else if (iter.type_ == bin)
 			{
-				auto temp = main.top().value_;
+				
+				bool is_double_first = false;
+				bool is_double_second = false;
+				auto temp = main.top();
 				auto temp1_type = main.top().type_;
+				if (temp1_type == num_double)
+					is_double_first = true;
 				main.pop();
-				auto temp2 = main.top().value_;
+				auto temp2 = main.top();
 				auto temp2_type = main.top().type_;
 				main.pop();
-				long long res = 0;
-				if (iter.inner_ == "+")
-				{
-					res = temp + temp2;
-				}
-				else if (iter.inner_ == "-")
-				{
-					res = temp2 - temp;
-				}
-				else if (iter.inner_ == "*")
-				{
-					res = temp * temp2;
-				}
-				else if (iter.inner_ == "/")
-				{
-					if (temp == 0)
-						throw division_by_zero_err(temp2, temp, iter.inner_);
-					else
-						res = temp2 / temp;
-				}
-				else if (iter.inner_ == "%")
-				{
-					if (temp == 0)
-						throw division_by_zero_err(temp2, temp, iter.inner_);
-					res = temp2 % temp;
-				}
-
-				if (temp1_type == num_int && temp2_type == num_int)
-					main.push(Lexeme(num_int, res, 0, to_string(res)));
+				if (temp2_type == num_double)
+					is_double_second = true;
+				main.push(calculator_inner_hiden(is_double_first, is_double_second, temp, temp2,iter));
+				
 			}
 		}
-		return main.top().value_;
+		
+		if (main.top().type_ == num_double)
+		{
+			ans = to_string(main.top().d_value);
+		}
+		else
+			ans= to_string(main.top().value_);
+		
 	}
 
+	Lexeme calculator_inner_hiden(bool is_double_first,bool is_double_second, Lexeme& first,Lexeme& second,Lexeme& iter)
+	{
+		if (is_double_first && is_double_second)
+		{
+			double res = 0.0;
 
+			auto temp = first.d_value;
+			auto temp2 = second.d_value;
+			auto temp1_type = first.type_;
+			auto temp2_type = second.type_;
+			if (iter.inner_ == "+")
+			{
+				res = temp + temp2;
+			}
+			else if (iter.inner_ == "-")
+			{
+				res = temp2 - temp;
+			}
+			else if (iter.inner_ == "*")
+			{
+				res = temp * temp2;
+			}
+			else if (iter.inner_ == "/")
+			{
+				if (temp == 0)
+				{
+					string tmp = to_string(temp2) + " / " + to_string(temp);
+					throw division_by_zero_err(tmp);
+				}
+				else
+					res = temp2 / temp;
+			}
+			else if (iter.inner_ == "%")
+			{
+				if (!(temp1_type == num_int && temp2_type == num_int))
+				{
+					string tmp = to_string(temp2) + " % " + to_string(temp);
+					throw persent_op_for_floating(tmp);
+				}
+				res = (long long)temp2 % (long long)temp;
+			}
+
+			return (Lexeme(num_double, res, 0, to_string(res)));
+
+		}
+		else if (is_double_first == false && is_double_second == false)
+		{
+			long long res = 0;
+
+			auto temp = first.value_;
+			auto temp2 = second.value_;
+			auto temp1_type = first.type_;
+			auto temp2_type = second.type_;
+			if (iter.inner_ == "+")
+			{
+				res = temp + temp2;
+			}
+			else if (iter.inner_ == "-")
+			{
+				res = temp2 - temp;
+			}
+			else if (iter.inner_ == "*")
+			{
+				res = temp * temp2;
+			}
+			else if (iter.inner_ == "/")
+			{
+				if (temp == 0)
+				{
+					string tmp = to_string(temp2) + " / " + to_string(temp);
+					throw division_by_zero_err(tmp);
+				}
+					
+				else
+					res = temp2 / temp;
+			}
+			else if (iter.inner_ == "%")
+			{
+				if (!(temp1_type == num_int && temp2_type == num_int))
+				{
+					string tmp = to_string(temp2) + " % " + to_string(temp);
+					throw persent_op_for_floating(tmp);
+				}
+				if (temp ==0)
+				{
+					string tmp = to_string(temp2) + " % " + to_string(temp);
+					throw division_by_zero_err(tmp);
+				}
+				res = temp2 % temp;
+				
+			}
+
+			return (Lexeme(num_int, res, 0, to_string(res)));
+		}
+		else if (is_double_first == false && is_double_second)
+		{
+			double res = 0.0;
+
+			auto temp = first.value_;
+			auto temp2 = second.d_value;
+			auto temp1_type = first.type_;
+			auto temp2_type = second.type_;
+
+			if (iter.inner_ == "+")
+			{
+				res = temp + temp2;
+			}
+			else if (iter.inner_ == "-")
+			{
+				res = temp2 - temp;
+			}
+			else if (iter.inner_ == "*")
+			{
+				res = temp * temp2;
+			}
+			else if (iter.inner_ == "/")
+			{
+				if (temp == 0)
+				{
+					string tmp = to_string(temp2) + " / " + to_string(temp);
+					throw division_by_zero_err(tmp);
+				}
+				else
+					res = temp2 / temp;
+			}
+			else if (iter.inner_ == "%")
+			{
+				if (!(temp1_type == num_int && temp2_type == num_int))
+				{
+					string tmp = to_string(temp2) + " % " + to_string(temp);
+					throw persent_op_for_floating(tmp);
+				}
+			}
+			auto l = Lexeme(num_double, res, 0, to_string(res));
+			return l;
+		}
+		else
+		{
+			double res = 0.0;
+
+			auto temp = first.d_value;
+			auto temp2 = second.value_;
+			auto temp1_type = first.type_;
+			auto temp2_type = second.type_;
+
+			if (iter.inner_ == "+")
+			{
+				res = temp2 + temp;
+			}
+			else if (iter.inner_ == "-")
+			{
+				res = temp - temp2;
+			}
+			else if (iter.inner_ == "*")
+			{
+				res = temp2 * temp;
+			}
+			else if (iter.inner_ == "/")
+			{
+				if (temp == 0)
+				{
+					string tmp = to_string(temp2) + " / " + to_string(temp);
+					throw division_by_zero_err(tmp);
+				}
+				else
+					res = temp2 / temp;
+			}
+			else if (iter.inner_ == "%")
+			{
+				if (!(temp1_type == num_int && temp2_type == num_int))
+				{
+					string tmp = to_string(temp2) + " % " + to_string(temp);
+					throw persent_op_for_floating(tmp);
+				}
+			}
+
+			auto l = Lexeme(num_double, res, 0, to_string(res));
+			return l;
+		}
+	}
 public:
 	Calculator()
 	{
-		dictionary_["start or skl"] = { make_pair(num_int,number),make_pair(skl,skoba_l) ,make_pair(una,unar) };
-		dictionary_["bin or un"] = { make_pair(num_int,number),make_pair(skl,skoba_l) };
+		dictionary_["start or skl"] = { make_pair(num_int,number),make_pair(num_double,number),make_pair(skl,skoba_l) ,make_pair(una,unar) };
+		dictionary_["bin or un"] = { make_pair(num_int,number),make_pair(skl,skoba_l),make_pair(num_double,number) };
 		dictionary_["num or skr"] = { make_pair(skr,skoba_r), make_pair(bin,binar),make_pair(blanc,stop) };
 	}
-	long long Calculate(string& str)
+	string Calculate(string& str)
 	{
 		str_ = str;
 		parse();
 		to_post();
-		return calculate_inner();
+		string temp;
+		calculate_inner(temp);
+		return temp;
 	}
 };
