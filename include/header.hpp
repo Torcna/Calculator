@@ -1,6 +1,5 @@
 #pragma once
-#include "source_lexeme.cpp"
-
+#include "../../Calculator/src/source_lexeme.cpp"
 using std::cin;
 using std::cout;
 using std::getline;
@@ -14,7 +13,6 @@ using std::to_string;
 using std::unordered_map;
 using std::vector;
 
-
 class Calculator {
   int count_skr_ = 0;
   int count_skl_ = 0;
@@ -24,6 +22,18 @@ class Calculator {
   map<string, set<pair<typeLex, STATUS>>> dictionary_;
   vector<lexeme_proxy*> vct_lex_;
 
+  vector<lexeme_proxy*> vct_for_polynoms;
+
+  void find_in_dictionary(bool& flag, typeLex& tip_next, STATUS& curr_stat, std::string key) {
+    for (auto&& iter : dictionary_[key]) {
+      if (tip_next == iter.first) {
+        if (iter.first == skl) count_skl_++;
+        if (iter.first == skr) count_skr_++;
+        curr_stat = iter.second;
+        flag = true;
+      }
+    }
+  }
 
   lexeme_proxy* next_one(int& mark, STATUS curr_stat, const string& input) {
     while (input[mark] == ' ') {
@@ -78,6 +88,7 @@ class Calculator {
           return new Lexeme<double>(typeLex::phonk, 0, 3, ans);
         }
       }
+      
 
       return new Lexeme<long long>(typeLex::variable, 0, 0, ans);
     }
@@ -87,7 +98,7 @@ class Calculator {
   void parse() {
     STATUS curr_stat = STATUS::start;
     int mark = 0;
-    int str_size = str_.size();
+    size_t str_size = str_.size();
     while (curr_stat != stop && mark < str_size) {
       if (curr_stat != error) {
         if (count_skl_ >= count_skr_) {
@@ -95,53 +106,33 @@ class Calculator {
           typeLex tip_next = sled->type_;
           mark++;
           if (curr_stat == start || curr_stat == skoba_l) {
-            bool flag = 0;
-            for (auto&& iter : dictionary_["start or skl"]) {
-              if (tip_next == iter.first) {
-                if (iter.first == skl) count_skl_++;
-                curr_stat = iter.second;
-                flag = true;
-              }
-            }
-            if (mark == str_.size() && count_skl_ == count_skr_)
+            bool flag = false;
+            find_in_dictionary(flag, tip_next, curr_stat, "start or skl");
+            if (mark == str_.size() && count_skl_ == count_skr_) {
               curr_stat = stop;
-            else if (flag == 0)
+            } else if (flag == false) {
               curr_stat = error;
-
+            }
           } else if (curr_stat == number || curr_stat == skoba_r) {
-            bool flag = 0;
-            for (auto&& iter : dictionary_["num or skr"]) {
-              auto&& t = iter.first;
-              if (tip_next == iter.first) {
-                if (iter.first == skr) count_skr_++;
-                curr_stat = iter.second;
-                flag = true;
-              }
+            bool flag = false;
+            find_in_dictionary(flag, tip_next, curr_stat, "num or skr");
+            if (flag == false) {
+              curr_stat = error;
             }
-            if (flag == 0) curr_stat = error;
           } else if (curr_stat == unar || curr_stat == binar) {
-            bool flag = 0;
-            for (auto&& iter : dictionary_["bin or un"]) {
-              if (tip_next == iter.first) {
-                if (iter.first == skl) {
-                  count_skl_++;
-                }
-                curr_stat = iter.second;
-                flag = true;
-              }
+            bool flag = false;
+            find_in_dictionary(flag, tip_next, curr_stat, "bin or un");
+            if (flag == false) {
+              curr_stat = error;
             }
-            if (flag == 0) curr_stat = error;
           } else if (curr_stat == phonking) {
             bool flag = 0;
-            for (auto iter : dictionary_["phonking"]) {
-              if (tip_next == iter.first) {
-                if (iter.first == skr) count_skl_++;
-                curr_stat = iter.second;
-                flag = true;
-              }
-              if (flag == 0) curr_stat = error;
+            find_in_dictionary(flag, tip_next, curr_stat, "phonking");
+            if (flag == false) {
+              curr_stat = error;
             }
           }
+
           vct_lex_.push_back(sled);
         } else
           curr_stat = error;
@@ -152,35 +143,65 @@ class Calculator {
     if (curr_stat == error) throw pars_err{mark};
     if (count_skl_ != count_skr_) throw brack_err(mark);
     if (vct_lex_.back()->type_ == bin) throw pars_err(mark);
+
     // initialize vars
-    for (auto&& temp : vct_lex_) {
+    auto start = vct_lex_.begin();
+    auto stop = vct_lex_.end();
+    for (; start != stop; ++start) {
+      auto&& temp = *start;
       if (temp->type_ == typeLex::variable) {
         auto&& finded_val = defined_vars.find(temp->inner_);
         if (finded_val != defined_vars.end())  // check if we already know value of the variable
         {
-          int mark = 0;
-          auto sled = next_one(mark, curr_stat, finded_val->second);
-          temp = sled;
+            if (finded_val->second == "p")
+            {
+                auto sled = new Lexeme<polynome>(typeLex::polynom, new polynome(temp->inner_), 0, temp->inner_);
+                delete temp;
+                *start = static_cast<lexeme_proxy*>(sled);
+            }
+            else
+            {
+              int mark = 0;
+              auto sled = next_one(mark, curr_stat, finded_val->second);
+              *start = sled;
+            }
         } else {
           cout << std::endl;
-          cout << "you have entered this variable:  " << '"' << temp->inner_ << '"' << " define it." << std::endl;
+          cout << "you have entered this variable:  " << '"' << temp->inner_ << '"' << " is this a polynome?  y/n"
+               << std::endl;
+          std::string input_y_n;
+          getline(cin, input_y_n);
 
-          int mark = 0;
-          string str_temp;
-          getline(cin, str_temp);
+          if (input_y_n == "y") {
+            if (temp->inner_.length() != 1) {
+              std::string t = "t";
+              throw poly_can_be_only_one_symbol_lenght(t);
+            }
+            auto sled = new Lexeme<polynome>(typeLex::polynom, new polynome(temp->inner_), 0, temp->inner_);
+            defined_vars[sled->inner_] = "p";
+            *start = sled;
 
-          auto sled = next_one(mark, curr_stat, str_temp);
+          } else if (input_y_n == "n") {
+            cout << std::endl;
+            cout << "then define it:"
+                 << std::endl;
+            int mark = 0;
+            string str_temp;
+            getline(cin, str_temp);
 
-          if (sled->type_ != typeLex::num_double && sled->type_ != typeLex::num_int) throw pars_err{mark};
-          mark++;
-          if (mark != str_temp.size() && mark != str_temp.size() - 1) {
-            sled = next_one(mark, curr_stat, str_temp);
-            throw lex_err{mark + 1};
+            auto sled = next_one(mark, curr_stat, str_temp);
+
+            if (sled->type_ != typeLex::num_double && sled->type_ != typeLex::num_int) throw pars_err{mark};
+            mark++;
+            if (mark != str_temp.size() && mark != str_temp.size() - 1) {
+              sled = next_one(mark, curr_stat, str_temp);
+              throw lex_err{mark + 1};
+            }
+            string r = temp->inner_;
+            string l = sled->inner_;
+
+            *start = sled;
           }
-          string r = temp->inner_;
-          string l = sled->inner_;
-          defined_vars[r] = l;
-          temp = sled;
         }
       }
     }
@@ -285,7 +306,8 @@ class Calculator {
         } else
           res = val2 / val1;
       } else if (iter->inner_ == "%") {
-        if constexpr (std::is_floating_point<decltype(val1)>::value || std::is_floating_point<decltype(val2)>::value) { //this is pretty good
+        if constexpr (std::is_floating_point<decltype(val1)>::value ||
+                      std::is_floating_point<decltype(val2)>::value) {  // this is pretty good
           string tmp = to_string(val2) + " % " + to_string(val1);
           throw persent_op_for_floating(tmp);
         } else {
@@ -319,16 +341,20 @@ class Calculator {
       else
         return new Lexeme<long long>(num_int, res, 0, to_string(res));
     }
+    return new lexeme_proxy;
   }
 
  public:
   Calculator() {
     dictionary_["start or skl"] = {make_pair(num_int, number), make_pair(num_double, number),
                                    make_pair(skl, skoba_l),    make_pair(una, unar),
-                                   make_pair(variable, var),   make_pair(phonk, phonking)};
+                                   make_pair(variable, var),
+                                   make_pair(phonk, phonking),
+                                   make_pair(polynom,poly)};
     dictionary_["bin or un"] = {make_pair(num_int, number), make_pair(skl, skoba_l), make_pair(num_double, number),
                                 make_pair(variable, var), make_pair(phonk, phonking)};
-    dictionary_["num or skr"] = {make_pair(skr, skoba_r), make_pair(bin, binar), make_pair(blanc, stop)};
+    dictionary_["num or skr"] = {make_pair(skr, skoba_r), make_pair(bin, binar), make_pair(blanc, stop),
+                                 make_pair(polynom, poly)};
     dictionary_["phonk"] = {make_pair(skl, skoba_l)};
     func_list = vector<string>{"exp", "sin", "cos", "lg", "sqrt"};
   }

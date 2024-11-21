@@ -1,11 +1,11 @@
-#include "header.h"
+#include "header.hpp"
 int main() {
   string input;
   getline(cin, input);
 
   try {
     Calculator calculator;
-    cout << calculator.Calculate(input) << std::endl;
+    cout <<std::endl<< calculator.Calculate(input) << std::endl;
 
   } catch (const lex_err& e) {
     cout << std::endl;
