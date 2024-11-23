@@ -11,11 +11,14 @@
 #include <unordered_map>
 #include <vector>
 #include "poly.hpp"
+#include "functional"
+
 struct lex_err : public std::exception {
   int problem_;
   lex_err(int ind) : problem_(ind){};
   char const* what() const noexcept override { return "unexpected lexeme"; }
 };
+
 struct pars_err : std::exception {
   int problem_;
   pars_err(int ind) : problem_(ind){};
@@ -41,11 +44,7 @@ struct persent_op_for_floating : math_err {
 
   char const* what() const noexcept override { return "using % operation on float is restricted"; };
 };
-struct poly_can_be_only_one_symbol_lenght : std::logic_error {
-  poly_can_be_only_one_symbol_lenght(std::string& op) : std::logic_error(op){};
 
-  char const* what() const noexcept override { return "in polynome lenght of symbol can be only 1 "; };
-};
 enum typeLex {  // types of lex
   blanc,
   bin,
@@ -73,10 +72,36 @@ enum STATUS {  // status of parsing
   poly
 };
 
+template <typeLex T>
+struct type_map {};
+
+template <>
+struct type_map<num_int> {
+    using type = long long;
+};
+
+template <>
+struct type_map<num_double> {
+    using type = double;
+};
+
+template <>
+struct type_map<polynom> {
+    using type = std::shared_ptr<polynome>;
+};
+
+
+template <typeLex T>
+using mapped_type_t = typename type_map<T>::type;
+
 struct lexeme_proxy {
   typeLex type_;
   int prior_;
   std::string inner_;
+
+  lexeme_proxy(typeLex t, int prior, std::string inner) : type_(t), prior_(prior), inner_(std::move(inner)) {}
+
+
 };
 
 template <typename type>
@@ -88,6 +113,8 @@ struct Lexeme<long long int> :lexeme_proxy
   long long int value;
   long long int get_val() { return value; }
   Lexeme(typeLex t, long long int val, int prior_, std::string inner_) : lexeme_proxy{t, prior_, inner_}, value(val){};
+
+
 };
 
 template <>
@@ -96,6 +123,7 @@ struct Lexeme<double> :lexeme_proxy
   double value;
   double get_val() { return value; }
   Lexeme(typeLex t, double val, int prior_, std::string inner_) : lexeme_proxy{t, prior_, inner_}, value(val){};
+
 };
 
 template <>
@@ -103,4 +131,5 @@ struct Lexeme<polynome> : lexeme_proxy {
   std::shared_ptr<polynome> value;
   auto get_val() { return value; }
   Lexeme(typeLex t, polynome* val, int prior_, std::string inner_) : lexeme_proxy{t, prior_, inner_}, value(val){};
+
 };
