@@ -5,7 +5,7 @@ int main() {
 
   try {
     Calculator calculator;
-    cout <<std::endl<< calculator.Calculate(input) << std::endl;
+    cout << std::endl << calculator.Calculate(input) << std::endl;
 
   } catch (const lex_err& e) {
     cout << std::endl;

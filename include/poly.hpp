@@ -1,6 +1,40 @@
+#ifndef POLY_HPP
+#define POLY_HPP
 #pragma once
 #include <list>
 #include <regex>
+
+struct lex_err : public std::exception {
+  int problem_;
+  lex_err(int ind) : problem_(ind){};
+  char const* what() const noexcept override { return "unexpected lexeme"; }
+};
+
+struct pars_err : std::exception {
+  int problem_;
+  pars_err(int ind) : problem_(ind){};
+  char const* what() const noexcept override { return "bad syntaxis"; }
+};
+struct brack_err : std::exception {
+  int problem_;
+  brack_err(int ind) : problem_(ind){};
+  char const* what() const noexcept override { return "brackets err"; }
+};
+struct math_err : std::exception {
+  std::string problem;
+  math_err(std::string& op) : problem(op){};
+  char const* what() const noexcept override { return "math_er"; };
+};
+struct division_by_zero_err : math_err {
+  division_by_zero_err(std::string& op) : math_err(op){};
+
+  char const* what() const noexcept override { return "division by zero is UNDEFINED"; };
+};
+struct persent_op_for_floating : math_err {
+  persent_op_for_floating(std::string& op) : math_err(op){};
+
+  char const* what() const noexcept override { return "using % operation on float is restricted"; };
+};
 
 struct poly_parse_err : std::logic_error {
   poly_parse_err(std::string op) : std::logic_error(op){};
@@ -8,142 +42,269 @@ struct poly_parse_err : std::logic_error {
   char const* what() const noexcept override { return "polynome parsing err "; };
 };
 
-class polynome {
+struct polynome {
   struct node_base {
+    std::string variable;
     size_t exponent;
-    node_base(size_t exp) : exponent(exp){};
     virtual ~node_base() = default;
-  };
-  std::list<node_base*> poly;
-  template <typename coeff_type>
-  struct node : node_base {
-    coeff_type coef;
 
-    node(coeff_type c, size_t exp) : node_base(exp), coef(c){};
+    explicit node_base(std::string var, size_t exp) : variable(var), exponent(exp) {}
   };
 
-template <typename type_node_ptr>
-  void add_term(type_node_ptr* term) {
-    for (auto it = poly.begin(); it != poly.end(); ++it) {
-      if ((*it)->exponent == term->exponent) {
-        if constexpr (std::is_same_v<type_node_ptr, decltype(*it)>) {
-          auto* existing = static_cast<node<type_node_ptr>*>(*it);
-          existing->coef += term->coef;
-          if constexpr (std::is_same_v<type_node_ptr, node<long long>> && existing->coef == 0) {
-            delete *it;
-            poly.erase(it);
-          } else if constexpr (std::is_same_v<type_node_ptr, node<double>> && std::fabs(existing->coef) < 1e-9) {
-            delete *it;
-            poly.erase(it);
+  template <typename T>
+  struct node : public node_base {
+    T coef;
+
+    node(T coef_, std::string var, size_t exp) : node_base(std::move(var), exp), coef(coef_) {}
+  };
+
+  std::list<std::shared_ptr<node_base>> poly;
+
+  void add_term(std::shared_ptr<node_base> new_term) {
+    for (auto& term : poly) {
+      if (term->variable == new_term->variable && term->exponent == new_term->exponent) {
+        if (auto* node_int = dynamic_cast<node<long long>*>(term.get())) {
+          if (auto* new_node_int = dynamic_cast<node<long long>*>(new_term.get())) {
+            node_int->coef += new_node_int->coef;
+            return;
           }
-        } else if constexpr (std::is_same_v<type_node_ptr, node<double>> && dynamic_cast<node<long long>*>(*it)) {
-          double new_coef = static_cast<double>(static_cast<node<long long>*>(*it)->coef) + term->coef;
-          delete *it;
-          *it = new node<double>(new_coef, term->exponent);
-        } else if constexpr (std::is_same_v<type_node_ptr, node<long long>> && dynamic_cast<node<double>*>(*it)) {
-
-          double new_coef =static_cast<node<double>*>(*it)->coef + term->coef;
-          delete *it;                                        
-          *it = new node<double>(new_coef, term->exponent);  
+        } else if (auto* node_double = dynamic_cast<node<double>*>(term.get())) {
+          if (auto* new_node_double = dynamic_cast<node<double>*>(new_term.get())) {
+            node_double->coef += new_node_double->coef;
+            return;
+          }
         }
-        delete term;
-        return;
       }
     }
-    poly.push_back(term);
+    poly.push_back(std::move(new_term));
   }
-
-
- public:
   std::string poly_face;
 
-  polynome(const std::string& str, char variable = 'x') {
-    std::regex term_regex(R"(([+-]?\d*\.?\d+)?\s*\*?\s*)" + std::string(1, variable) + R"((?:\^(\d+))?)");
-    std::smatch match;
+  polynome(const std::string& str, std::string variable = "x") {
+    std::string cleaned_str;
+    for (char ch : str) {
+      if (!std::isspace(ch)) {
+        cleaned_str += ch;
+      }
+    }
 
-    auto begin = str.cbegin();
-    auto end = str.cend();
+    size_t i = 0;
+    while (i < cleaned_str.size()) {
+      int sign = 1;
+      if (cleaned_str[i] == '+' || cleaned_str[i] == '-') {
+        sign = (cleaned_str[i] == '-') ? -1 : 1;
+        ++i;
+      }
 
-    while (std::regex_search(begin, end, match, term_regex)) {
-      node_base* coeff_node = nullptr;
+      double d_coeff = 1.0;
+      long long i_coeff = 1;
+      bool is_integer = true;
+      bool has_coeff = false;
 
-      if (match[1].matched && !match[1].str().empty()) {
-        std::string coeff_str = match[1].str();
-        try {
-          long long int_coeff = std::stoll(coeff_str);
-          coeff_node = new node<long long>(int_coeff, 0);
-        } catch (const std::invalid_argument&) {
-          double double_coeff = std::stod(coeff_str);
-          coeff_node = new node<double>(double_coeff, 0);
+      size_t coeff_start = i;
+      while (i < cleaned_str.size() && (std::isdigit(cleaned_str[i]) || cleaned_str[i] == '.')) {
+        if (cleaned_str[i] == '.') {
+          is_integer = false;
         }
-      } else if (match[1].str() == "-") {
-        coeff_node = new node<long long>(-1, 0);
-      } else if (match[1].str() == "+") {
-        coeff_node = new node<long long>(1, 0);
+        ++i;
+      }
+      if (i > coeff_start) {
+        std::string coeff_str = cleaned_str.substr(coeff_start, i - coeff_start);
+        try {
+          if (is_integer) {
+            i_coeff = std::stoll(coeff_str);
+          } else {
+            d_coeff = std::stod(coeff_str);
+            is_integer = false;
+          }
+        } catch (...) {
+          throw poly_parse_err("Failed to parse coefficient: " + coeff_str);
+        }
+        has_coeff = true;
+      }
+
+      size_t exponent = 0;
+      if (i < cleaned_str.size() && cleaned_str[i] == variable[0]) {
+        ++i;
+
+        if (i < cleaned_str.size() && cleaned_str[i] == '^') {
+          ++i;
+          size_t exp_start = i;
+          while (i < cleaned_str.size() && std::isdigit(cleaned_str[i])) {
+            ++i;
+          }
+          if (exp_start < i) {
+            try {
+              exponent = std::stoul(cleaned_str.substr(exp_start, i - exp_start));
+            } catch (...) {
+              throw poly_parse_err("Failed to parse exponent");
+            }
+          } else {
+            throw poly_parse_err("Exponent expected after '^'");
+          }
+        } else {
+          exponent = 1;
+        }
+      } else if (has_coeff) {
+        exponent = 0;
+      }
+      std::string temp = exponent == 0 ? "" : variable;
+      std::shared_ptr<node_base> coeff_node;
+      if (is_integer) {
+        coeff_node = std::make_shared<node<long long>>(sign * i_coeff, temp, exponent);
       } else {
-        coeff_node = new node<long long>(1, 0);
+        coeff_node = std::make_shared<node<double>>(sign * d_coeff, temp, exponent);
       }
-
-      size_t exponent = 1;
-      if (match[2].matched) {
-        exponent = std::stoul(match[2].str());
-      }
-
-      coeff_node->exponent = exponent;
-      poly.push_back(coeff_node);
-
-      begin = match.suffix().first;
+      add_term(coeff_node);
     }
   }
+
   polynome() = default;
 
-  ~polynome() {
-    for (auto* node : poly) {
-      delete node;
+  ~polynome() = default;
+
+  polynome& operator=(polynome&& other) noexcept {
+    if (this != &other) {
+      poly = std::move(other.poly);
     }
+    return *this;
   }
 
-  polynome(long long value) {
-    poly.push_back(new node<long long>(value, 0));
-  }
-
-  // Оператор преобразования для double
-  polynome(double value) {
-    poly.push_back(new node<double>(value, 0));  
-  }
-
-  polynome operator+(const polynome& other) const {
-    polynome result = *this;
-
-
-    for (auto* term : other.poly) {
-      result.add_term(term);
-    }
-
-    return result;
-  }
-
-  polynome operator-(const polynome& other) const {
-    polynome result = *this; 
-
-
-    for (auto* term : other.poly) {
-      if constexpr (std::is_same_v<decltype(*term), node<long long>>) {
-        auto* temp = static_cast<node<long long int>*>(term); 
-        auto* neg_term = new node<long long>(-temp->coef, term->exponent);
-        result.add_term(neg_term);
-      } else if constexpr (std::is_same_v<decltype(*term), node<double>>) {
-        auto* temp = static_cast<node<double>*>(term); 
-        auto* neg_term = new node<double>(-temp->coef, term->exponent);
-        result.add_term(neg_term);
+  polynome(const polynome& other) {
+    for (auto&& term : other.poly) {
+      if (auto node_int = std::dynamic_pointer_cast<node<long long>>(term)) {
+        poly.push_back(std::make_shared<node<long long>>(node_int->coef, node_int->variable, node_int->exponent));
+      } else if (auto node_double = std::dynamic_pointer_cast<node<double>>(term)) {
+        poly.push_back(std::make_shared<node<double>>(node_double->coef, node_double->variable, node_double->exponent));
       }
     }
-
-    return result;
   }
-
-
 };
 
+inline polynome operator+(const polynome& poly, auto value) {
+  polynome result = poly;
+  if constexpr (std::is_arithmetic_v<decltype(value)>) {
+    result.add_term(std::make_shared<typename polynome::node<decltype(value)>>(value, "", 0));
+  }
+  return result;
+}
 
+inline polynome operator+(auto value, const polynome& poly) { return poly + value; }
 
+inline polynome operator+(const polynome& p1, const polynome& p2) {
+  polynome result = p1;
+
+  for (const auto& term : p2.poly) {
+    result.add_term(term);
+  }
+
+  return result;
+}
+
+inline polynome operator-(const polynome& poly) {
+  polynome result;
+  for (const auto& term : poly.poly) {
+    if (auto node_int = std::dynamic_pointer_cast<typename polynome::node<long long>>(term)) {
+      result.add_term(std::make_shared<typename polynome::node<long long>>(-node_int->coef, node_int->variable,
+                                                                           node_int->exponent));
+    } else if (auto node_double = std::dynamic_pointer_cast<typename polynome::node<double>>(term)) {
+      result.add_term(std::make_shared<typename polynome::node<double>>(-node_double->coef, node_double->variable,
+                                                                        node_double->exponent));
+    }
+  }
+  return result;
+}
+inline polynome operator-(const polynome& poly, auto value) { return poly + (-value); }
+
+inline polynome operator-(auto value, const polynome& poly) {
+  polynome result;
+  result.add_term(std::make_shared<typename polynome::node<decltype(value)>>(value, "", 0));
+  for (const auto& term : poly.poly) {
+    if (auto node_int = std::dynamic_pointer_cast<typename polynome::node<long long>>(term)) {
+      result.add_term(std::make_shared<typename polynome::node<long long>>(-node_int->coef, node_int->variable,
+                                                                           node_int->exponent));
+    } else if (auto node_double = std::dynamic_pointer_cast<typename polynome::node<double>>(term)) {
+      result.add_term(std::make_shared<typename polynome::node<double>>(-node_double->coef, node_double->variable,
+                                                                        node_double->exponent));
+    }
+  }
+  return result;
+}
+
+inline polynome operator-(const polynome& p1, const polynome& p2) { return p1 + (-p2); }
+
+inline polynome operator*(const polynome& poly, auto value) {
+  polynome result;
+  if constexpr (std::is_arithmetic_v<decltype(value)>) {
+    for (const auto& term : poly.poly) {
+      if (auto node_int = std::dynamic_pointer_cast<typename polynome::node<long long>>(term)) {
+        result.add_term(std::make_shared<typename polynome::node<long long>>(node_int->coef * value, node_int->variable,
+                                                                             node_int->exponent));
+      } else if (auto node_double = std::dynamic_pointer_cast<typename polynome::node<double>>(term)) {
+        result.add_term(std::make_shared<typename polynome::node<double>>(
+            node_double->coef * value, node_double->variable, node_double->exponent));
+      }
+    }
+  }
+  return result;
+}
+
+inline polynome operator*(auto value, const polynome& poly) { return poly * value; }
+
+inline polynome operator*(const polynome& p1, const polynome& p2) {
+  polynome result;
+  for (const auto& term1 : p1.poly) {
+    for (const auto& term2 : p2.poly) {
+      if (auto node_int1 = std::dynamic_pointer_cast<typename polynome::node<long long>>(term1)) {
+        if (auto node_int2 = std::dynamic_pointer_cast<typename polynome::node<long long>>(term2)) {
+          result.add_term(std::make_shared<typename polynome::node<long long>>(
+              node_int1->coef * node_int2->coef, node_int1->variable, node_int1->exponent + node_int2->exponent));
+        } else if (auto node_double2 = std::dynamic_pointer_cast<typename polynome::node<double>>(term2)) {
+          result.add_term(std::make_shared<typename polynome::node<double>>(
+              node_int1->coef * node_double2->coef, node_double2->variable,
+              node_int1->exponent + node_double2->exponent));
+        }
+      } else if (auto node_double1 = std::dynamic_pointer_cast<typename polynome::node<double>>(term1)) {
+        if (auto node_int2 = std::dynamic_pointer_cast<typename polynome::node<long long>>(term2)) {
+          result.add_term(std::make_shared<typename polynome::node<double>>(
+              node_double1->coef * node_int2->coef, node_double1->variable,
+              node_double1->exponent + node_int2->exponent));
+        } else if (auto node_double2 = std::dynamic_pointer_cast<typename polynome::node<double>>(term2)) {
+          result.add_term(std::make_shared<typename polynome::node<double>>(
+              node_double1->coef * node_double2->coef, node_double1->variable,
+              node_double1->exponent + node_double2->exponent));
+        }
+      }
+    }
+  }
+  return result;
+}
+#endif
+
+inline polynome operator/(const polynome& poly, auto value) {
+  polynome result;
+
+  for (const auto& term : poly.poly) {
+    if (auto node_int = std::dynamic_pointer_cast<polynome::node<long long>>(term)) {
+      if (value == static_cast<long long>(value)) {
+        long long int_value = static_cast<long long>(value);
+        if (int_value != 0 && node_int->coef % int_value == 0) {
+          result.add_term(std::make_shared<polynome::node<long long>>(node_int->coef / int_value, node_int->variable,
+                                                                      node_int->exponent));
+        } else {
+          result.add_term(
+              std::make_shared<polynome::node<double>>(static_cast<double>(node_int->coef) / static_cast<double>(value),
+                                                       node_int->variable, node_int->exponent));
+        }
+      } else {
+        result.add_term(std::make_shared<polynome::node<double>>(
+            static_cast<double>(node_int->coef) / static_cast<double>(value), node_int->variable, node_int->exponent));
+      }
+    } else if (auto node_double = std::dynamic_pointer_cast<polynome::node<double>>(term)) {
+      result.add_term(std::make_shared<polynome::node<double>>(node_double->coef / static_cast<double>(value),
+                                                               node_double->variable, node_double->exponent));
+    }
+  }
+
+  return result;
+}

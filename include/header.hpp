@@ -12,6 +12,15 @@ using std::string;
 using std::to_string;
 using std::unordered_map;
 using std::vector;
+#define HANDLE_CASE(t1, t2)                                          \
+  if (temp1_type == t1 && temp2_type == t2) {                        \
+    auto* lexeme1 = dynamic_cast<Lexeme<mapped_type_t<t1>>*>(temp);  \
+    auto* lexeme2 = dynamic_cast<Lexeme<mapped_type_t<t2>>*>(temp2); \
+    if (lexeme1 && lexeme2) {                                        \
+      main.push(calculator_inner_hidden(lexeme1, lexeme2, iter));    \
+      continue;                                                      \
+    }                                                                \
+  }
 
 class Calculator {
   int count_skr_ = 0;
@@ -21,7 +30,6 @@ class Calculator {
   map<string, string> defined_vars;
   map<string, set<pair<typeLex, STATUS>>> dictionary_;
   vector<lexeme_proxy*> vct_lex_;
-  map<typeLex, std::function<void*(void)>> type_map;
 
   void find_in_dictionary(bool& flag, typeLex& tip_next, STATUS& curr_stat, std::string key) {
     for (auto&& iter : dictionary_[key]) {
@@ -166,9 +174,15 @@ class Calculator {
           bool is_polynome = false;
 
           try {
-            auto it = std::find_if(str_temp.begin(), str_temp.end(), [](char c) { return std::isalpha(c); });
-            if (it != str_temp.end()) {
-              auto temp_poly = new polynome(str_temp, *it);
+            size_t it = 0;
+            auto sz = str_temp.length();
+            for (it = 0; it != sz; ++it) {
+              if (std::isalpha(str_temp[it])) break;
+            }
+
+            if (it != sz) {
+              string variable(1, str_temp[it]);
+              auto temp_poly = new polynome(str_temp, variable);
               lexeme_proxy* parsed_poly = new Lexeme<polynome>(polynom, temp_poly, 0, str_temp);
               delete *start;
               *start = parsed_poly;
@@ -236,42 +250,15 @@ class Calculator {
         auto&& temp2 = main.top();
         auto temp2_type = main.top()->type_;
         main.pop();
-
-        // main.push(
-        //       calculator_inner_hidden(static_cast<Lexeme<double>*>(temp), static_cast<Lexeme<double>*>(temp2),
-        //       iter));
-
-        // if (temp1_type == num_double && temp2_type == num_double)
-        //   main.push(
-        //       calculator_inner_hidden(static_cast<Lexeme<double>*>(temp), static_cast<Lexeme<double>*>(temp2),
-        //       iter));
-        // else if (temp1_type == num_double && temp2_type == num_int)
-        //   main.push(
-        //       calculator_inner_hidden(static_cast<Lexeme<double>*>(temp), static_cast<Lexeme<long long>*>(temp2),
-        //       iter));
-        // else if (temp1_type == num_int && temp2_type == num_double)
-        //   main.push(
-        //       calculator_inner_hidden(static_cast<Lexeme<long long>*>(temp), static_cast<Lexeme<double>*>(temp2),
-        //       iter));
-        // else if (temp1_type == num_int && temp2_type==num_int)
-        //   main.push(calculator_inner_hidden(static_cast<Lexeme<long long>*>(temp),
-        //                                    static_cast<Lexeme<long long>*>(temp2), iter));
-        // else if (temp1_type == polynom && temp2_type == num_int)
-        //   main.push(calculator_inner_hidden(static_cast<Lexeme<polynome>*>(temp),
-        //                                     static_cast<Lexeme<long long>*>(temp2), iter));
-        // else if (temp1_type == num_int && temp2_type == polynom)
-        //   main.push(calculator_inner_hidden(static_cast<Lexeme<long long>*>(temp),
-        //   static_cast<Lexeme<polynome>*>(temp2),
-        //                                     iter));
-        // else if (temp1_type == polynom && temp2_type == num_double)
-        //   main.push(calculator_inner_hidden(static_cast<Lexeme<polynome>*>(temp),
-        //                                     static_cast<Lexeme<long long>*>(temp2), iter));
-        // else if (temp1_type == polynom && temp2_type == num_int)
-        //   main.push(calculator_inner_hidden(static_cast<Lexeme<polynome>*>(temp),
-        //                                     static_cast<Lexeme<long long>*>(temp2), iter));
-        // else if (temp1_type == polynom && temp2_type == num_int)
-        //   main.push(calculator_inner_hidden(static_cast<Lexeme<polynome>*>(temp),
-        //                                     static_cast<Lexeme<long long>*>(temp2), iter));
+        HANDLE_CASE(num_double, num_double);
+        HANDLE_CASE(num_double, num_int);
+        HANDLE_CASE(num_int, num_double);
+        HANDLE_CASE(num_int, num_int);
+        HANDLE_CASE(polynom, num_int);
+        HANDLE_CASE(polynom, num_double);
+        HANDLE_CASE(num_double, polynom);
+        HANDLE_CASE(num_int, polynom);
+        HANDLE_CASE(polynom, polynom);
 
       } else if (iter->type_ == phonk) {
         auto&& value_in_func = main.top();
@@ -280,7 +267,7 @@ class Calculator {
         if (temp1_type == num_double)
           main.push(calculator_inner_hidden(static_cast<Lexeme<double>*>(value_in_func),
                                             static_cast<Lexeme<long long>*>(nullptr), iter));
-        else
+        else if (temp1_type == num_int)
           main.push(calculator_inner_hidden(static_cast<Lexeme<long long>*>(value_in_func),
                                             static_cast<Lexeme<long long>*>(nullptr), iter));
       }
@@ -289,17 +276,26 @@ class Calculator {
     if (main.top()->type_ == num_double) {
       auto* t = static_cast<Lexeme<double>*>(main.top());
       ans = to_string(static_cast<Lexeme<double>*>(main.top())->get_val());
-    } else
+    } else if (main.top()->type_ == num_int) {
       ans = to_string(static_cast<Lexeme<long long>*>(main.top())->get_val());
+    } else {
+      ans = to_string_poly((static_cast<Lexeme<polynome>*>(main.top())));
+    }
   }
 
   template <typename type_lex_1, typename type_lex_2>
   lexeme_proxy* calculator_inner_hidden(type_lex_1* first, type_lex_2* second, lexeme_proxy* iter) {
+    if constexpr (std::is_same_v<type_lex_1, polynome> || std::is_same_v<type_lex_2, polynome>) {
+      if (iter->inner_ != "+" && iter->inner_ != "-" && iter->inner_ != "*") {
+        std::string tmp = "Operations other than +, -, and * are not supported for polynomes.";
+        throw std::logic_error(tmp);
+      }
+    }
+
     if (iter->type_ == typeLex::bin) {
       auto val1 = first->get_val();
       auto val2 = second->get_val();
-      auto res = val1 + val2;
-      res = 0;
+      decltype(val1 + val2) res{};
 
       if (iter->inner_ == "+") {
         res = val1 + val2;
@@ -307,66 +303,81 @@ class Calculator {
         res = val2 - val1;
       } else if (iter->inner_ == "*") {
         res = val1 * val2;
-      } else if (iter->inner_ == "/") {
-        if (val1 == 0) {
-          string tmp = to_string(val2) + " / " + to_string(val1);
-          throw division_by_zero_err(tmp);
-        } else
-          res = val2 / val1;
-      } else if (iter->inner_ == "%") {
-        if constexpr (std::is_floating_point<decltype(val1)>::value ||
-                      std::is_floating_point<decltype(val2)>::value) {  // this is pretty good
-          string tmp = to_string(val2) + " % " + to_string(val1);
-          throw persent_op_for_floating(tmp);
-        } else {
+      } else if constexpr (!std::is_same_v<type_lex_1, Lexeme<polynome>>) {
+        if (iter->inner_ == "/") {
           if (val1 == 0) {
-            string tmp = to_string(val2) + " % " + to_string(val1);
-            throw division_by_zero_err(tmp);
+            std::string t = "ff";
+            throw division_by_zero_err(t);
+          } else {
+            res = val2 / val1;
           }
-          res = val2 % val1;
+        } else if (iter->inner_ == "%") {
+          if constexpr (!std::is_same_v<type_lex_2, Lexeme<polynome>>) {
+            if constexpr (std::is_floating_point_v<decltype(val1)> || std::is_floating_point_v<decltype(val2)>) {
+              std::string tmp = std::to_string(val2) + " % " + std::to_string(val1);
+              throw persent_op_for_floating(tmp);
+            } else {
+              if (val1 == 0) {
+                std::string tmp = std::to_string(val2) + " % " + std::to_string(val1);
+                throw division_by_zero_err(tmp);
+              }
+              res = val2 % val1;
+            }
+          }
         }
       }
-      if (std::is_floating_point<decltype(res)>::value)
-        return new Lexeme<double>(num_double, res, 0, to_string(res));
-      else
-        return new Lexeme<long long>(num_int, res, 0, to_string(res));
-    } else if (iter->type_ == typeLex::phonk) {
-      double res = 0;
-      auto val1 = first->get_val();
-      if (iter->inner_ == "sin")
-        res = sin(val1);
-      else if (iter->inner_ == "cos")
-        res = cos(val1);
-      else if (iter->inner_ == "exp")
-        res = exp(val1);
-      else if (iter->inner_ == "lg")
-        res = log10(val1);
-      else if (iter->inner_ == "sqrt")
-        res = sqrt(val1);
+      if constexpr (std::is_arithmetic_v<decltype(res)>) {
+        if (std::is_floating_point_v<decltype(res)>)
+          return new Lexeme<double>(num_double, res, 0, std::to_string(res));
+        else
+          return new Lexeme<long long>(num_int, res, 0, std::to_string(res));
+      } else {
+        std::string t = "poly";
+        auto temp_saver = new polynome(res);
 
-      if (std::is_floating_point<decltype(res)>::value)
-        return new Lexeme<double>(num_double, res, 0, to_string(res));
-      else
-        return new Lexeme<long long>(num_int, res, 0, to_string(res));
+        return new Lexeme<polynome>(polynom, temp_saver, 0, t);
+      }
+
+    } else if (iter->type_ == typeLex::phonk) {
+      if constexpr (!std::is_same_v<type_lex_1, Lexeme<polynome>>) {
+        double res = 0;
+        auto val1 = first->get_val();
+        if (iter->inner_ == "sin")
+          res = sin(val1);
+        else if (iter->inner_ == "cos")
+          res = cos(val1);
+        else if (iter->inner_ == "exp")
+          res = exp(val1);
+        else if (iter->inner_ == "lg")
+          res = log10(val1);
+        else if (iter->inner_ == "sqrt")
+          res = sqrt(val1);
+
+        if (std::is_floating_point_v<decltype(res)>)
+          return new Lexeme<double>(num_double, res, 0, std::to_string(res));
+        else
+          return new Lexeme<long long>(num_int, res, 0, std::to_string(res));
+      }
     }
+
     return new lexeme_proxy(blanc, 1, "sga");
   }
 
  public:
   Calculator() {
-    dictionary_["start or skl"] = {make_pair(num_int, number), make_pair(num_double, number),
-                                   make_pair(skl, skoba_l),    make_pair(una, unar),
-                                   make_pair(variable, var),   make_pair(phonk, phonking),
-                                   /*make_pair(polynom,poly)*/};
+    dictionary_["start or skl"] = {
+        make_pair(num_int, number), make_pair(num_double, number), make_pair(skl, skoba_l),
+        make_pair(una, unar),       make_pair(variable, var),      make_pair(phonk, phonking),
+    };
     dictionary_["bin or un"] = {make_pair(num_int, number), make_pair(skl, skoba_l), make_pair(num_double, number),
                                 make_pair(variable, var), make_pair(phonk, phonking)};
-    dictionary_["num or skr"] = {make_pair(skr, skoba_r), make_pair(bin, binar), make_pair(blanc, stop),
-                                 /*make_pair(polynom, poly)*/};
+    dictionary_["num or skr"] = {
+        make_pair(skr, skoba_r),
+        make_pair(bin, binar),
+        make_pair(blanc, stop),
+    };
     dictionary_["phonk"] = {make_pair(skl, skoba_l)};
     func_list = vector<string>{"exp", "sin", "cos", "lg", "sqrt"};
-    type_map = {{num_int, []() { return new long long(); }},
-                {num_double, []() { return new double(); }},
-                {polynom, []() { return new std::shared_ptr<polynome>(); }}};
   }
   string Calculate(string& str) {
     str_ = str;
